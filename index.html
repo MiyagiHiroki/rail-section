@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>レール断面作図</title>
+<meta name="description" content="計測値を入力してレール断面図を作図し、SVGで保存するアプリ">
+<meta name="theme-color" content="#1d2329">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+html{color-scheme:light}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font-size:14px}img{max-width:100%}[hidden]{display:none!important}
+/* 左：計測値入力（部位ごと） / 右：図面用紙（入力中の寸法を朱で示す） */
+:root{
+  --bg:#eef0f2; --panel:#ffffff; --fg:#1d2329; --muted:#5d6872; --line:#d3d8dd;
+  --accent:#c8442b; --accent-soft:#f8e3de; --warn:#8a5a00; --warn-bg:#fff4d6;
+  --paper:#ffffff; --ink:#111111;
+  --sans:"IBM Plex Sans JP","Hiragino Sans","Yu Gothic UI",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#15191d; --panel:#1e2329; --fg:#e4e8ec; --muted:#9aa5af; --line:#343b43;
+  --accent:#ef6a4f; --accent-soft:#3a221d; --warn:#f2c35b; --warn-bg:#3a3018;
+  --paper:#f7f7f5; --ink:#111111; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#15191d; --panel:#1e2329; --fg:#e4e8ec; --muted:#9aa5af; --line:#343b43;
+  --accent:#ef6a4f; --accent-soft:#3a221d; --warn:#f2c35b; --warn-bg:#3a3018;
+  --paper:#f7f7f5; --ink:#111111; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.55}
+.wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:18px 32px;max-width:1280px;margin:0 auto}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px;margin-bottom:14px}
+h1{font-size:20px;margin:0;font-weight:700;letter-spacing:.02em}
+header p{margin:0;color:var(--muted);font-size:13px}
+.app{display:grid;grid-template-columns:minmax(300px,390px) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:860px){.app{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px}
+.inputs{padding:4px 0}
+fieldset{border:0;margin:0;padding:12px 16px;border-bottom:1px solid var(--line)}
+fieldset:last-child{border-bottom:0}
+legend{font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--muted);padding:0;margin-bottom:6px}
+.row{display:grid;grid-template-columns:38px minmax(0,1fr) 96px;gap:4px 10px;align-items:center;padding:6px 8px;margin:0 -8px;border-radius:6px;cursor:text}
+.row.on{background:var(--accent-soft)}
+.sym{font-family:var(--mono);font-weight:500;font-size:13px;text-align:center;border:1px solid var(--line);border-radius:4px;padding:1px 0;background:var(--bg)}
+.row.on .sym{border-color:var(--accent);color:var(--accent)}
+.nm{font-weight:500;font-size:13.5px}
+.ds{grid-column:2 / -1;color:var(--muted);font-size:12px;line-height:1.45}
+.inputs.asym .row{grid-template-columns:38px minmax(0,1fr) 76px 76px}
+.colhd{display:grid;grid-template-columns:38px minmax(0,1fr) 76px 76px;gap:4px 10px;padding:8px 16px 0;font-size:11px;color:var(--muted);font-weight:700;letter-spacing:.08em}
+.colhd span:nth-child(n+3){text-align:center}
+.num.one{grid-column:3 / -1}
+.mode{display:flex;gap:0;margin:12px 16px 4px;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.mode label{flex:1;text-align:center;font-size:13px;padding:6px 4px;cursor:pointer;color:var(--muted)}
+.mode input{position:absolute;opacity:0;pointer-events:none}
+.mode input:checked+span{color:var(--fg);font-weight:700}
+.mode label:has(input:checked){background:var(--accent-soft)}
+.mode label:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:-2px}
+.modenote{margin:0 16px 4px;font-size:12px;color:var(--muted)}
+.derived table{width:100%;border-collapse:collapse;font-size:13px}
+.derived th,.derived td{text-align:left;padding:3px 6px;border-bottom:1px solid var(--line)}
+.derived td{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.derived th{font-weight:500;color:var(--muted);font-size:12px}
+.num{display:flex;align-items:center;gap:4px}
+.num input{width:100%;min-width:0;font-family:var(--mono);font-size:14px;padding:5px 6px;border:1px solid var(--line);border-radius:4px;background:var(--panel);color:var(--fg);text-align:right;font-variant-numeric:tabular-nums}
+.num span{color:var(--muted);font-size:12px}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.meta input[type=text]{width:100%;box-sizing:border-box;font:inherit;padding:5px 7px;border:1px solid var(--line);border-radius:4px;background:var(--panel);color:var(--fg)}
+.meta label{display:block;font-size:12px;color:var(--muted);margin:6px 0 3px}
+.side{display:flex;flex-direction:column;gap:12px;position:sticky;top:env(safe-area-inset-top,0px)}
+@media (max-width:860px){.side{position:static}}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
+.toolbar label{font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center}
+select{font:inherit;font-size:13px;padding:3px 6px;border:1px solid var(--line);border-radius:4px;background:var(--panel);color:var(--fg)}
+.sheet{background:var(--paper);padding:10px;border-radius:0 0 8px 8px;overflow:auto}
+.sheet svg{display:block;width:100%;height:auto;max-height:72vh}
+.sheet svg .dim.hl line,.sheet svg .dim.hl path.ar{stroke:var(--accent)}
+.sheet svg .dim.hl path.ar{fill:var(--accent)}
+.sheet svg .dim.hl text{fill:var(--accent);font-weight:700}
+.actions{display:flex;flex-wrap:wrap;gap:8px;padding:12px 14px}
+button{font:inherit;font-size:13px;padding:6px 12px;border-radius:5px;border:1px solid var(--line);background:var(--panel);color:var(--fg);cursor:pointer}
+button.pri{background:var(--fg);color:var(--panel);border-color:var(--fg)}
+button:hover{border-color:var(--muted)}
+button:disabled{opacity:.45;cursor:default}
+.status{font-size:12px;color:var(--muted);padding:0 14px 12px;min-height:1em}
+.derived{padding:12px 14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px 16px}
+.derived div{display:flex;flex-direction:column}
+.derived b{font-size:11px;color:var(--muted);font-weight:500;letter-spacing:.06em}
+.derived span{font-family:var(--mono);font-size:14px;font-variant-numeric:tabular-nums}
+.warn{margin:0;padding:10px 14px;background:var(--warn-bg);color:var(--warn);font-size:13px;border-radius:8px}
+.warn ul{margin:0;padding-left:18px}
+.note{font-size:12px;color:var(--muted);padding:0 2px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>レール断面作図</h1>
+  <p>計測値を入力すると断面図を描きます。入力中の項目は図中で朱色に表示されます。片側が摩耗した資料は「左右個別」で計測します。</p>
+</header>
+
+<div class="app">
+  <div class="panel inputs" id="inputs"></div>
+
+  <div class="side">
+    <div class="panel">
+      <div class="toolbar">
+        <label>縮尺 <select id="scale">
+          <option value="1">1/1</option><option value="0.5" selected>1/2</option>
+          <option value="0.3333333">1/3</option><option value="0.25">1/4</option></select></label>
+        <label>寸法表示 <select id="labels">
+          <option value="both" selected>記号＋数値</option><option value="value">数値のみ</option>
+          <option value="sym">記号のみ</option><option value="none">表示しない</option></select></label>
+        <label>中心線 <select id="cl"><option value="1" selected>あり</option><option value="0">なし</option></select></label>
+        <label>スケールバー <select id="sb"><option value="h" selected>横1本</option><option value="hv">横＋縦の2本</option><option value="hh">横2本（上下）</option><option value="0">なし</option></select></label>
+        <label>長さ <select id="sbl"><option value="auto" selected>自動</option><option value="10">1cm</option><option value="20">2cm</option><option value="50">5cm</option><option value="100">10cm</option></select></label>
+      </div>
+      <div class="sheet" id="sheet"></div>
+      <div class="actions">
+        <button class="pri" id="save1" type="button">SVG保存（寸法あり）</button>
+        <button class="pri" id="save0" type="button">SVG保存（寸法なし）</button>
+        <button id="copy" type="button">SVGコードをコピー</button>
+        <button id="undo" type="button" title="Ctrl+Z">元に戻す</button>
+        <button id="redo" type="button" title="Ctrl+Y">やり直す</button>
+        <button id="copyjson" type="button">計測値をコピー</button>
+        <button id="sample" type="button">サンプル値に戻す</button>
+      </div>
+      <div class="status" id="status" aria-live="polite"></div>
+    </div>
+    <div id="warn"></div>
+    <div class="panel derived" id="derived"></div>
+    <p class="note">初期値は動作確認用の架空の値です。SVGは用紙寸法（mm）で書き出すため、Illustrator・Inkscape等で開くと指定縮尺の大きさになります。</p>
+  </div>
+</div>
+</div>
+
+<script>
+const DEF={
+ A:{name:'全高',ds:'底面から頭頂面までの高さ'},
+ C:{name:'頭部幅',ds:'頭部の最大幅'},
+ F:{name:'底部幅',ds:'底部の全幅'},
+ t:{name:'腹部厚',ds:'腹部の最も薄い部分の厚さ。左右の基準（腹部中心）になります'},
+ Ch:{name:'頭部張り出し',ds:'腹部の側面（t を測った高さ）から頭部側面までの水平距離'},
+ Hs:{name:'頭部側面高',ds:'頭頂面から頭部側面の下端（あご部の始まり）まで'},
+ Hj:{name:'頭部高',ds:'頭頂面から、あご部下面が腹部に接する点まで'},
+ Fh:{name:'底部張り出し',ds:'腹部の側面（t を測った高さ）から底部縁端までの水平距離'},
+ Bs:{name:'底部縁端厚',ds:'底面から底部縁端の上面まで'},
+ Bc:{name:'底部中央厚',ds:'底面から、底部上面が腹部に接する点まで'},
+ R1:{name:'頭頂隅',ds:'頭頂面と頭部側面の角の半径。摩耗で丸くなった側は大きくなります'},
+ R2:{name:'あご部－腹部',ds:'あご部下面から腹部へ移る入隅の半径'},
+ R3:{name:'腹部－底部',ds:'腹部から底部上面へ移る入隅の半径'},
+ R4:{name:'底部縁端',ds:'底部縁端上面の角の半径'},
+};
+const LAYOUT={
+ sym:[['全体',['A','C','F']],['頭部',['Hs','Hj']],['腹部',['t']],['底部',['Bs','Bc']],['隅の丸み（R）',['R1','R2','R3','R4']]],
+ asym:[['全体',['A']],['頭部',['Ch','Hs','Hj']],['腹部',['t']],['底部',['Fh','Bs','Bc']],['隅の丸み（R）',['R1','R2','R3','R4']]]
+};
+const SIDED=new Set(['Ch','Hs','Hj','Fh','Bs','Bc','R1','R2','R3','R4']);
+const SIDEKEYS=['Ch','Hs','Hj','Fh','Bs','Bc','R1','R2','R3','R4'];
+const SAMPLE={A:122,C:62,F:122,Hs:26,Hj:38,t:13.5,Bs:10,Bc:24,R1:12,R2:10,R3:12,R4:3};
+const SIDE_NAME={L:'左',R:'右'};
+
+let mode='sym', S={...SAMPLE}, LR={L:null,R:null}, meta={name:'',note:''}, active=null;
+function symToSide(){return{Ch:(S.C-S.t)/2,Fh:(S.F-S.t)/2,Hs:S.Hs,Hj:S.Hj,Bs:S.Bs,Bc:S.Bc,R1:S.R1,R2:S.R2,R3:S.R3,R4:S.R4};}
+const r1=n=>Math.round(n*10)/10;
+try{const v=JSON.parse(localStorage.getItem('railSec')||'null');
+  if(v){ if(v.P) S={...SAMPLE,...v.P}; if(v.S) S={...SAMPLE,...v.S}; if(v.L&&v.R) LR={L:v.L,R:v.R};
+    if(v.mode==='asym'&&LR.L) mode='asym'; meta={...meta,...(v.meta||{})}; }}catch(e){}
+
+// ---- 入力欄 ----
+const box=document.getElementById('inputs');
+function inputHTML(id,val){return `<input id="${id}" type="number" inputmode="decimal" step="0.1" min="0" value="${val}">`;}
+function renderInputs(){
+  const asym=mode==='asym';
+  box.classList.toggle('asym',asym);
+  let h=`<div class="mode" role="radiogroup" aria-label="作図方法">
+    <label><input type="radio" name="mode" value="sym" ${asym?'':'checked'}><span>左右対称</span></label>
+    <label><input type="radio" name="mode" value="asym" ${asym?'checked':''}><span>左右個別（片側摩耗）</span></label></div>`;
+  h+= asym?`<p class="modenote">左右は図の向きです。基準は腹部の中心。「左右対称」に戻すと左右の平均値になります。</p>
+    <div class="colhd"><span></span><span></span><span>左</span><span>右</span></div>`
+    :`<p class="modenote">左右を同じ値として作図します。</p>`;
+  LAYOUT[mode].forEach(([g,keys])=>{
+    h+=`<fieldset><legend>${g}</legend>`;
+    keys.forEach(k=>{
+      const d=DEF[k];
+      if(asym&&SIDED.has(k)){
+        h+=`<div class="row" data-k="${k}"><span class="sym">${k}</span><span class="nm">${d.name}</span>
+          <span class="num">${inputHTML('in-'+k+'-L',r1(LR.L[k]))}</span><span class="num">${inputHTML('in-'+k+'-R',r1(LR.R[k]))}</span>
+          <span class="ds">${d.ds}</span></div>`;
+      }else{
+        h+=`<label class="row" data-k="${k}" for="in-${k}"><span class="sym">${k}</span><span class="nm">${d.name}</span>
+          <span class="num one">${inputHTML('in-'+k,S[k])}<span>mm</span></span><span class="ds">${d.ds}</span></label>`;
+      }
+    });
+    h+='</fieldset>';
+  });
+  h+=`<fieldset class="meta"><legend>資料情報</legend>
+    <label for="in-name">資料名・番号</label><input type="text" id="in-name" placeholder="例：運天港 No.12">
+    <label for="in-note">注記</label><input type="text" id="in-note" placeholder="例：右側頭部摩耗"></fieldset>`;
+  box.innerHTML=h;
+  document.getElementById('in-name').value=meta.name; document.getElementById('in-note').value=meta.note;
+  ['name','note'].forEach(k=>{const el=document.getElementById('in-'+k);
+    el.addEventListener('input',e=>{snap(el.id);meta[k]=e.target.value;update();});
+    el.addEventListener('blur',()=>{editing=null;});});
+  box.querySelectorAll('input[name=mode]').forEach(r=>r.addEventListener('change',()=>setMode(r.value)));
+  box.querySelectorAll('input[type=number]').forEach(el=>{
+    const [,k,side]=el.id.split('-');
+    el.addEventListener('input',()=>{const v=parseFloat(el.value); if(!isFinite(v)) return;
+      snap(el.id); if(side) LR[side][k]=v; else S[k]=v; update();});
+    el.addEventListener('focus',()=>{active=side?k+'.'+side:k; update();});
+    el.addEventListener('blur',()=>{active=null; editing=null; update();});
+  });
+}
+// ---- 元に戻す／やり直す ----
+const undoStack=[], redoStack=[]; let editing=null;
+const state=()=>JSON.stringify({mode,S,LR,meta});
+function snap(id){ // 1つの欄を編集している間は1回だけ記録
+  if(id && editing===id) return;
+  editing=id||null; undoStack.push(state()); if(undoStack.length>200) undoStack.shift(); redoStack.length=0; histBtns();
+}
+function restore(js){const v=JSON.parse(js); mode=v.mode; S=v.S; LR=v.LR; meta=v.meta; active=null; editing=null; renderInputs(); update(); histBtns();}
+function undo(){ if(!undoStack.length) return say('これ以上戻せません'); redoStack.push(state()); restore(undoStack.pop()); say('元に戻しました'); }
+function redo(){ if(!redoStack.length) return say('やり直す操作がありません'); undoStack.push(state()); restore(redoStack.pop()); say('やり直しました'); }
+function histBtns(){const u=document.getElementById('undo'),r=document.getElementById('redo'); if(u){u.disabled=!undoStack.length; r.disabled=!redoStack.length;}}
+document.addEventListener('keydown',e=>{
+  if(!(e.ctrlKey||e.metaKey)||e.altKey) return;
+  const k=e.key.toLowerCase();
+  if(k==='z'&&!e.shiftKey){e.preventDefault(); undo();}
+  else if(k==='y'||(k==='z'&&e.shiftKey)){e.preventDefault(); redo();}
+},true);
+
+function setMode(m){
+  if(m===mode) return;
+  snap(null);
+  if(m==='asym'){ const b=symToSide(); LR={L:{...b},R:{...b}}; }
+  else{
+    const L=LR.L,R=LR.R, av=k=>r1((L[k]+R[k])/2);
+    S.C=r1(S.t+L.Ch+R.Ch); S.F=r1(S.t+L.Fh+R.Fh);
+    ['Hs','Hj','Bs','Bc','R1','R2','R3','R4'].forEach(k=>S[k]=av(k));
+  }
+  mode=m; active=null; renderInputs(); update();
+}
+['scale','labels','cl','sb','sbl'].forEach(id=>document.getElementById(id).addEventListener('change',update));
+
+// ---- 幾何 ----
+const fx=n=>(Math.round(n*100)/100).toString();
+const fv=n=>(Math.round(n*10)/10).toFixed(1);
+function sub(a,b){return[a[0]-b[0],a[1]-b[1]]}
+function add(a,b){return[a[0]+b[0],a[1]+b[1]]}
+function mul(a,k){return[a[0]*k,a[1]*k]}
+function len(a){return Math.hypot(a[0],a[1])}
+function nrm(a){const l=len(a)||1;return[a[0]/l,a[1]/l]}
+
+function roundedPath(V){ // 画面座標（y下向き）・時計回り
+  const n=V.length, info=[]; let d='';
+  for(let i=0;i<n;i++){
+    const p=V[(i-1+n)%n], c=V[i], q=V[(i+1)%n];
+    const u1=nrm(sub(p,c)), u2=nrm(sub(q,c));
+    const th=Math.acos(Math.max(-1,Math.min(1,u1[0]*u2[0]+u1[1]*u2[1])));
+    let r=c[2], dd=r/Math.tan(th/2);
+    const maxd=Math.min(len(sub(p,c)),len(sub(q,c)))*0.5;
+    if(dd>maxd){dd=maxd; r=dd*Math.tan(th/2);}
+    const T1=add(c,mul(u1,dd)), T2=add(c,mul(u2,dd));
+    const cr=(c[0]-p[0])*(q[1]-c[1])-(c[1]-p[1])*(q[0]-c[0]);
+    const bis=nrm(add(u1,u2)), ctr=add(c,mul(bis,r/Math.sin(th/2)));
+    const mid=add(ctr,mul(nrm(sub(c,ctr)),r));
+    info.push({ctr,mid,convex:cr>0,r});
+    d+=(i===0?'M':'L')+fx(T1[0])+' '+fx(T1[1]);
+    if(r>0.01) d+=`A${fx(r)} ${fx(r)} 0 0 ${cr>0?1:0} ${fx(T2[0])} ${fx(T2[1])}`; else d+='L'+fx(T2[0])+' '+fx(T2[1]);
+  }
+  return {d:d+'Z',info};
+}
+
+function geom(){
+  if(mode==='sym'){const b=symToSide();return{A:S.A,t:S.t,L:b,R:{...b}};}
+  return{A:S.A,t:S.t,L:LR.L,R:LR.R};
+}
+function validate(G){
+  const w=[], asym=mode==='asym';
+  if(!(G.A>0)) w.push('A（全高）を入力してください');
+  if(!(G.t>0)) w.push('t（腹部厚）を入力してください');
+  if(!asym){
+    if(S.C<=S.t) w.push('C（頭部幅）は t（腹部厚）より大きい値にしてください');
+    if(S.F<=S.t) w.push('F（底部幅）は t（腹部厚）より大きい値にしてください');
+  }
+  ['L','R'].forEach(sd=>{
+    const g=G[sd], tag=asym?`［${SIDE_NAME[sd]}］`:'';
+    if(asym && w.some(x=>x.startsWith('［'+SIDE_NAME[sd]))) return;
+    SIDEKEYS.forEach(k=>{ if(!(g[k]>=0)) w.push(`${tag}${k}（${DEF[k].name}）が未入力または負の値です`); });
+    if(asym&&!(g.Ch>0)) w.push(`${tag}Ch（頭部張り出し）は0より大きい値にしてください`);
+    if(asym&&!(g.Fh>0)) w.push(`${tag}Fh（底部張り出し）は0より大きい値にしてください`);
+    if(g.Hj<=g.Hs) w.push(`${tag}Hj（頭部高）は Hs（頭部側面高）より大きい値にしてください`);
+    if(g.Bc<=g.Bs) w.push(`${tag}Bc（底部中央厚）は Bs（底部縁端厚）より大きい値にしてください`);
+    if(G.A<=g.Hj+g.Bc) w.push(`${tag}A（全高）が Hj＋Bc 以下です。腹部の高さがなくなります`);
+  });
+  return asym?w:[...new Set(w)];
+}
+
+// ---- 作図（用紙mm単位） ----
+function build(G,o){
+  const s=o.s, GP=7, TS=2.6, SW=0.13, ink='#111', asym=o.asym, showDim=o.labels!=='none';
+  const {A,t,L,R}=G;
+  const exL=Math.max(t/2+L.Ch,t/2+L.Fh)*s, exR=Math.max(t/2+R.Ch,t/2+R.Fh)*s;
+  const rows=asym?2:1, cols=asym?3:1;
+  let bar=o.sbl==='auto'?50:+o.sbl; if(o.sbl==='auto'&&bar*s>exL+exR) bar=20;
+  const sbExtra=o.sb==='hv'?bar*s+2:o.sb==='hh'?9:0;
+  const mL=showDim?2*GP+8:8, mR=showDim?cols*GP+16:8, mT=showDim?rows*GP+8:8, mB=(showDim?rows*GP+6:6)+(o.sb==='0'?8:16)+sbExtra;
+  const W=exL+exR+mL+mR, H=A*s+mT+mB;
+  const cx=mL+exL, base=mT+A*s;
+  const X=x=>cx+x*s, Y=y=>base-y*s;
+  const key=(k,sd)=>asym&&sd?k+'.'+sd:k;
+  const symTxt=(k,sd)=>asym&&sd?`${k}(${SIDE_NAME[sd]})`:k;
+  const lab=(k,sd,v)=>o.labels==='both'?`${symTxt(k,sd)} ${fv(v)}`:o.labels==='value'?fv(v):symTxt(k,sd);
+  const hL=-(t/2+L.Ch), hR=t/2+R.Ch, fL=-(t/2+L.Fh), fR=t/2+R.Fh;
+  const V=[[hR,A,R.R1],[hR,A-R.Hs,1],[t/2,A-R.Hj,R.R2],[t/2,R.Bc,R.R3],[fR,R.Bs,R.R4],[fR,0,0.5],
+           [fL,0,0.5],[fL,L.Bs,L.R4],[-t/2,L.Bc,L.R3],[-t/2,A-L.Hj,L.R2],[hL,A-L.Hs,1],[hL,A,L.R1]]
+           .map(v=>[X(v[0]),Y(v[1]),v[2]*s]);
+  const rp=roundedPath(V);
+  let out=`<svg xmlns="http://www.w3.org/2000/svg" ${o.exp?`width="${fx(W)}mm" height="${fx(H)}mm" `:''}viewBox="0 0 ${fx(W)} ${fx(H)}" font-family="sans-serif">`;
+  out+=`<rect width="${fx(W)}" height="${fx(H)}" fill="#fff"/>`;
+  if(o.cl) out+=`<line x1="${fx(cx)}" y1="${fx(Y(A)-4)}" x2="${fx(cx)}" y2="${fx(base+4)}" stroke="${ink}" stroke-width="${SW}" stroke-dasharray="4 1 1 1"/>`;
+  out+=`<path d="${rp.d}" fill="none" stroke="${ink}" stroke-width="0.35" stroke-linejoin="round"/>`;
+
+  const arrow=(x,y,dx,dy)=>{const Lr=1.8,w=0.5;const bx=x-dx*Lr,by=y-dy*Lr;
+    return `<path class="ar" d="M${fx(x)} ${fx(y)}L${fx(bx-dy*w)} ${fx(by+dx*w)}L${fx(bx+dy*w)} ${fx(by-dx*w)}Z" fill="${ink}" stroke="${ink}" stroke-width="0.05"/>`;};
+  const ln=(x1,y1,x2,y2)=>`<line x1="${fx(x1)}" y1="${fx(y1)}" x2="${fx(x2)}" y2="${fx(y2)}" stroke="${ink}" stroke-width="${SW}"/>`;
+  const gOpen=k=>`<g class="dim${k&&o.active===k?' hl':''}">`;
+  const txt=(x,y,tx,anchor='middle',rot=0)=>`<text x="${fx(x)}" y="${fx(y)}" font-size="${TS}" fill="${ink}" text-anchor="${anchor}"${rot?` transform="rotate(${rot} ${fx(x)} ${fx(y)})"`:''}>${tx}</text>`;
+
+  function dimH(x1,x2,y,fy1,fy2,k,label,below){
+    let g=gOpen(k)+ln(x1,fy1,x1,y+(y>fy1?1.5:-1.5))+ln(x2,fy2,x2,y+(y>fy2?1.5:-1.5));
+    const short=x2-x1<6;
+    if(short) g+=ln(x1-5,y,x2+5,y)+arrow(x1,y,1,0)+arrow(x2,y,-1,0);
+    else g+=ln(x1,y,x2,y)+arrow(x1,y,-1,0)+arrow(x2,y,1,0);
+    const tw=label.length*TS*0.62, ty=below?y+TS+0.8:y-0.9;
+    if(tw>x2-x1-2 && x2<=cx) g+=txt(x1-1.5,ty,label,'end');
+    else if(tw>x2-x1-2 && x1>=cx) g+=txt(x2+1.5,ty,label,'start');
+    else g+=txt((x1+x2)/2,ty,label);
+    return g+'</g>';
+  }
+  function dimV(x,y1,y2,fx1,fx2,k,label,right){
+    let g=gOpen(k)+ln(fx1,y1,x+(x>fx1?1.5:-1.5),y1)+ln(fx2,y2,x+(x>fx2?1.5:-1.5),y2);
+    const short=y2-y1<6;
+    if(short) g+=ln(x,y1-5,x,y2+5)+arrow(x,y1,0,1)+arrow(x,y2,0,-1);
+    else g+=ln(x,y1,x,y2)+arrow(x,y1,0,-1)+arrow(x,y2,0,1);
+    const tx=right?x+TS:x-0.9, tw=label.length*TS*0.6;
+    const ty=short?y2+5+tw/2+1:(y1+y2)/2;
+    g+=txt(tx,ty,label,'middle',-90);return g+'</g>';
+  }
+  if(showDim){
+    const top=Y(A), bot=base;
+    // 上下の幅
+    if(asym){
+      out+=dimH(X(hL),X(-t/2),top-GP,top,top,key('Ch','L'),lab('Ch','L',L.Ch),false);
+      out+=dimH(X(t/2),X(hR),top-GP,top,top,key('Ch','R'),lab('Ch','R',R.Ch),false);
+      out+=dimH(X(hL),X(hR),top-2*GP,top,top,null,lab('C',null,hR-hL),false);
+      out+=dimH(X(fL),X(-t/2),bot+GP,bot,bot,key('Fh','L'),lab('Fh','L',L.Fh),true);
+      out+=dimH(X(t/2),X(fR),bot+GP,bot,bot,key('Fh','R'),lab('Fh','R',R.Fh),true);
+      out+=dimH(X(fL),X(fR),bot+2*GP,bot,bot,null,lab('F',null,fR-fL),true);
+    }else{
+      out+=dimH(X(hL),X(hR),top-GP,top,top,'C',lab('C',null,hR-hL),false);
+      out+=dimH(X(fL),X(fR),bot+GP,bot,bot,'F',lab('F',null,fR-fL),true);
+    }
+    // 左側の高さ
+    const l1=cx-exL-GP, l2=l1-GP;
+    out+=dimV(l1,top,Y(A-L.Hs),X(hL),X(hL),key('Hs','L'),lab('Hs','L',L.Hs),false);
+    out+=dimV(l2,top,Y(A-L.Hj),X(hL),X(-t/2),key('Hj','L'),lab('Hj','L',L.Hj),false);
+    out+=dimV(l1,Y(L.Bs),bot,X(fL),X(fL),key('Bs','L'),lab('Bs','L',L.Bs),false);
+    out+=dimV(l2,Y(L.Bc),bot,X(-t/2),X(fL),key('Bc','L'),lab('Bc','L',L.Bc),false);
+    // 右側の高さ・全高
+    const q1=cx+exR+GP;
+    if(asym){
+      const q2=q1+GP;
+      out+=dimV(q1,top,Y(A-R.Hs),X(hR),X(hR),key('Hs','R'),lab('Hs','R',R.Hs),true);
+      out+=dimV(q2,top,Y(A-R.Hj),X(hR),X(t/2),key('Hj','R'),lab('Hj','R',R.Hj),true);
+      out+=dimV(q1,Y(R.Bs),bot,X(fR),X(fR),key('Bs','R'),lab('Bs','R',R.Bs),true);
+      out+=dimV(q2,Y(R.Bc),bot,X(t/2),X(fR),key('Bc','R'),lab('Bc','R',R.Bc),true);
+      out+=dimV(q2+GP,top,bot,X(hR),X(fR),'A',lab('A',null,A),true);
+    }else out+=dimV(q1,top,bot,X(hR),X(fR),'A',lab('A',null,A),true);
+    // 腹部厚
+    const ym=Y((Math.max(L.Bc,R.Bc)+A-Math.max(L.Hj,R.Hj))/2), a=X(-t/2), b=X(t/2);
+    out+=gOpen('t')+ln(a-5,ym,b+5,ym)+arrow(a,ym,1,0)+arrow(b,ym,-1,0)+txt(b+5.8,ym+TS*0.35,lab('t',null,t),'start')+'</g>';
+    // R
+    const rl=[[0,'R1','R',1],[2,'R2','R',1],[3,'R3','R',1],asym?[4,'R4','R',1]:[7,'R4','L',-1]];
+    if(asym) rl.push([11,'R1','L',-1],[9,'R2','L',-1],[8,'R3','L',-1],[7,'R4','L',-1]);
+    rl.forEach(([i,k,sd,side])=>{
+      const inf=rp.info[i], v=G[sd][k]; if(!(v>0)) return;
+      let dir, d=4, hd=side;
+      if(k==='R4'){dir=nrm([0.08*side,-1]); d=11; hd=side;}
+      else dir=inf.convex?nrm(sub(inf.mid,inf.ctr)):nrm(sub(inf.ctr,inf.mid));
+      const e=add(inf.mid,mul(dir,d)), e2=[e[0]+hd*4,e[1]];
+      const tl=o.labels==='value'?'R'+fv(v):o.labels==='sym'?symTxt(k,asym?sd:null):`${symTxt(k,asym?sd:null)} R${fv(v)}`;
+      out+=gOpen(key(k,asym?sd:null))+ln(inf.mid[0],inf.mid[1],e[0],e[1])+ln(e[0],e[1],e2[0],e2[1])
+        +txt(e2[0]+hd*0.8,e2[1]+TS*0.35,tl,hd>0?'start':'end')+'</g>';
+    });
+  }
+  // スケールバー・表題
+  const sc=Math.round(1/s), cy=H-12, bx=W/2-bar*s/2, unit=v=>v%10===0?(v/10)+'cm':v+'mm';
+  const hbar=(x0,y0)=>{let r=ln(x0,y0,x0+bar*s,y0);
+    for(let i=0;i<=bar;i+=(bar>=50?10:bar>=20?5:2)) r+=ln(x0+i*s,y0-1,x0+i*s,y0);
+    return r+txt(x0,y0+TS+0.6,'0')+txt(x0+bar*s,y0+TS+0.6,unit(bar));};
+  if(o.sb!=='0') out+=`<g class="sbar">${hbar(bx,cy)}</g>`;
+  if(o.sb==='hh') out+=`<g class="sbar">${hbar(bx,cy-9)}</g>`;
+  if(o.sb==='hv'){
+    const vx=bx-6; let r=ln(vx,cy,vx,cy-bar*s);
+    for(let i=0;i<=bar;i+=(bar>=50?10:bar>=20?5:2)) r+=ln(vx,cy-i*s,vx+1,cy-i*s);
+    r+=txt(vx-1,cy+TS*0.35,'0','end')+txt(vx-1,cy-bar*s+TS*0.35,unit(bar),'end');
+    out+=`<g class="sbar">${r}</g>`;
+  }
+  const cap=[meta.name,`S=1/${sc}`,meta.note].filter(Boolean).join('　');
+  out+=txt(W/2,H-2.5,esc(cap));
+  return {svg:out+'</svg>',W,H};
+}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+
+function opts(exp,lbl){return{s:parseFloat(document.getElementById('scale').value),labels:lbl||document.getElementById('labels').value,
+  sb:document.getElementById('sb').value,sbl:document.getElementById('sbl').value,
+  cl:document.getElementById('cl').value==='1',active:exp?null:active,exp,asym:mode==='asym'}}
+
+function update(){
+  const ak=active?active.split('.'):[];
+  document.querySelectorAll('.row').forEach(r=>r.classList.toggle('on',r.dataset.k===ak[0]));
+  const G=geom(), w=validate(G);
+  document.getElementById('warn').innerHTML=w.length?`<div class="warn"><ul>${w.map(x=>`<li>${x}</li>`).join('')}</ul></div>`:'';
+  if(!w.length) document.getElementById('sheet').innerHTML=build(G,opts(false)).svg;
+  const deg=(r,x)=>(Math.atan2(r,x)*180/Math.PI).toFixed(1)+'°';
+  const ratio=(r,x)=>r>0?'1:'+(x/r).toFixed(2):'—';
+  const side=g=>({web:fv(G.A-g.Hj-g.Bc),jaw:`${ratio(g.Hj-g.Hs,g.Ch)}（${deg(g.Hj-g.Hs,g.Ch)}）`,ft:`${ratio(g.Bc-g.Bs,g.Fh)}（${deg(g.Bc-g.Bs,g.Fh)}）`});
+  const dl=side(G.L), dr=side(G.R), el=document.getElementById('derived');
+  if(mode==='sym'){
+    el.innerHTML=`<div><b>腹部の高さ（A−Hj−Bc）</b><span>${dl.web} mm</span></div>
+     <div><b>あご部下面の勾配</b><span>${dl.jaw}</span></div><div><b>底部上面の勾配</b><span>${dl.ft}</span></div>`;
+  }else{
+    const C=G.t+G.L.Ch+G.R.Ch, F=G.t+G.L.Fh+G.R.Fh;
+    const off=(a,b)=>{const d=(b-a)/2;return Math.abs(d)<0.05?'0.0 mm':`${fv(Math.abs(d))} mm ${d>0?'右':'左'}寄り`;};
+    el.innerHTML=`<div><b>頭部幅 C（t＋左右張り出し）</b><span>${fv(C)} mm</span></div>
+     <div><b>底部幅 F（t＋左右張り出し）</b><span>${fv(F)} mm</span></div>
+     <div><b>頭部中心のずれ（腹部中心から）</b><span>${off(G.L.Ch,G.R.Ch)}</span></div>
+     <div><b>底部中心のずれ（腹部中心から）</b><span>${off(G.L.Fh,G.R.Fh)}</span></div>
+     <table style="grid-column:1/-1"><tr><th></th><th>左</th><th>右</th></tr>
+     <tr><th>腹部の高さ</th><td>${dl.web} mm</td><td>${dr.web} mm</td></tr>
+     <tr><th>あご部下面の勾配</th><td>${dl.jaw}</td><td>${dr.jaw}</td></tr>
+     <tr><th>底部上面の勾配</th><td>${dl.ft}</td><td>${dr.ft}</td></tr></table>`;
+  }
+  try{localStorage.setItem('railSec',JSON.stringify({mode,S,L:LR.L,R:LR.R,meta}))}catch(e){}
+}
+
+const st=document.getElementById('status');
+function say(m){st.textContent=m; clearTimeout(say.t); say.t=setTimeout(()=>st.textContent='',4000);}
+function copyText(t,okMsg){
+  navigator.clipboard.writeText(t).then(()=>say(okMsg)).catch(()=>{
+    const ta=document.createElement('textarea'); ta.value=t; ta.style.width='100%'; ta.rows=6;
+    st.textContent='自動コピーできませんでした。下の欄を全選択してコピーしてください。'; st.appendChild(ta); ta.select();});
+}
+function exportSvg(lbl){return '<?xml version="1.0" encoding="UTF-8"?>\n'+build(geom(),opts(true,lbl)).svg;}
+const bad=()=>validate(geom()).length>0;
+document.getElementById('copy').onclick=()=>{if(bad()) return say('入力値を修正してください');copyText(exportSvg(),'SVGコードをコピーしました');};
+document.getElementById('copyjson').onclick=()=>{
+  let body;
+  if(mode==='sym'){
+    body='記号\t部位\t計測値(mm)\n'+LAYOUT.sym.flatMap(([,ks])=>ks).map(k=>`${k}\t${DEF[k].name}\t${S[k]}`).join('\n');
+  }else{
+    body='記号\t部位\t左(mm)\t右(mm)\n'+LAYOUT.asym.flatMap(([,ks])=>ks).map(k=>SIDED.has(k)?`${k}\t${DEF[k].name}\t${LR.L[k]}\t${LR.R[k]}`:`${k}\t${DEF[k].name}\t${S[k]}\t${S[k]}`).join('\n');
+  }
+  copyText((meta.name?meta.name+'\n':'')+body,'計測値を表形式でコピーしました（Excelに貼り付け可）');};
+function saveSvg(withDim){
+  if(bad()) return say('入力値を修正してください');
+  let lbl=document.getElementById('labels').value; if(withDim){ if(lbl==='none') lbl='both'; } else lbl='none';
+  const fname=(meta.name||'rail-section').replace(/[\\/:*?"<>|\s]+/g,'_')+(withDim?'_寸法あり':'_寸法なし')+'.svg';
+  const data=exportSvg(lbl);
+  if(DL){DL.save({filename:fname,data}).then(()=>say('保存しました：'+fname)).catch(e=>say(e&&e.code==='declined'?'保存を取り消しました':'この画面では保存できません。「SVGコードをコピー」を使ってください'));return;}
+  try{const blob=new Blob([data],{type:'image/svg+xml'});const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);a.download=fname;document.body.appendChild(a);a.click();a.remove();say('保存を開始しました：'+fname);}
+  catch(e){say('この画面では保存できません。「SVGコードをコピー」を使ってください');}
+}
+document.getElementById('save1').onclick=()=>saveSvg(true);
+document.getElementById('save0').onclick=()=>saveSvg(false);
+document.getElementById('undo').onclick=undo;
+document.getElementById('redo').onclick=redo;
+let DL=null;
+document.getElementById('sample').onclick=()=>{
+  snap(null); S={...SAMPLE};
+  if(mode==='asym'){const b=symToSide(); LR={L:{...b},R:{...b,Ch:b.Ch-4,Hs:b.Hs-3,R1:20}};}
+  renderInputs();update();say(mode==='asym'?'サンプル値（右側頭部が摩耗した想定の架空値）に戻しました':'サンプル値に戻しました');};
+renderInputs();
+update();
+histBtns();
+</script>
+<script>
+if('serviceWorker' in navigator && location.protocol==='https:'){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+}
+</script>
+</body>
+</html>
