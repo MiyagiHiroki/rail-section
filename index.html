@@ -59,6 +59,10 @@ legend{font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--muted);pa
 .mode label:has(input:checked){background:var(--accent-soft)}
 .mode label:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:-2px}
 .modenote{margin:0 16px 4px;font-size:12px;color:var(--muted)}
+.mode.sm{margin:2px 0 6px}
+.rnote{margin:0 0 6px;font-size:12px;color:var(--muted);line-height:1.5}
+.num input:disabled{background:var(--bg);color:var(--muted);border-style:dashed}
+.auto-tag{font-size:10px;color:var(--accent);font-weight:700;letter-spacing:.04em;margin-left:4px}
 .derived table{width:100%;border-collapse:collapse;font-size:13px}
 .derived th,.derived td{text-align:left;padding:3px 6px;border-bottom:1px solid var(--line)}
 .derived td{font-family:var(--mono);font-variant-numeric:tabular-nums}
@@ -164,16 +168,21 @@ const SIDEKEYS=['Ch','Hs','Hj','Fh','Bs','Bc','R1','R2','R3','R4'];
 const SAMPLE={A:122,C:62,F:122,Hs:26,Hj:38,t:13.5,Bs:10,Bc:24,R1:12,R2:10,R3:12,R4:3};
 const SIDE_NAME={L:'左',R:'右'};
 
-let mode='sym', S={...SAMPLE}, LR={L:null,R:null}, meta={name:'',note:''}, active=null;
+let mode='sym', S={...SAMPLE}, LR={L:null,R:null}, meta={name:'',note:''}, active=null, rAuto=false;
+const RKEYS=['R1','R2','R3','R4'];
+// 平均的な丸みとして推定するR（試行値。各部の寸法に対する比率）
+const RAUTO_RULE={R1:'頭部の片側幅（t/2＋張り出し）×0.4（Hs×0.6まで）',R2:'t×0.75',R3:'t×0.9',R4:'Bs×0.3'};
+function autoR(g,t){const hh=t/2+g.Ch;
+  return{R1:r1(Math.min(0.4*hh,0.6*g.Hs)),R2:r1(0.75*t),R3:r1(0.9*t),R4:r1(0.3*g.Bs)};}
 function symToSide(){return{Ch:(S.C-S.t)/2,Fh:(S.F-S.t)/2,Hs:S.Hs,Hj:S.Hj,Bs:S.Bs,Bc:S.Bc,R1:S.R1,R2:S.R2,R3:S.R3,R4:S.R4};}
 const r1=n=>Math.round(n*10)/10;
 try{const v=JSON.parse(localStorage.getItem('railSec')||'null');
   if(v){ if(v.P) S={...SAMPLE,...v.P}; if(v.S) S={...SAMPLE,...v.S}; if(v.L&&v.R) LR={L:v.L,R:v.R};
-    if(v.mode==='asym'&&LR.L) mode='asym'; meta={...meta,...(v.meta||{})}; }}catch(e){}
+    if(v.mode==='asym'&&LR.L) mode='asym'; meta={...meta,...(v.meta||{})}; rAuto=!!v.rAuto; }}catch(e){}
 
 // ---- 入力欄 ----
 const box=document.getElementById('inputs');
-function inputHTML(id,val){return `<input id="${id}" type="number" inputmode="decimal" step="0.1" min="0" value="${val}">`;}
+function inputHTML(id,val,dis){return `<input id="${id}" type="number" inputmode="decimal" step="0.1" min="0" value="${val}"${dis?' disabled':''}>`;}
 function renderInputs(){
   const asym=mode==='asym';
   box.classList.toggle('asym',asym);
@@ -185,15 +194,22 @@ function renderInputs(){
     :`<p class="modenote">左右を同じ値として作図します。</p>`;
   LAYOUT[mode].forEach(([g,keys])=>{
     h+=`<fieldset><legend>${g}</legend>`;
+    if(g.startsWith('隅の丸み')){
+      h+=`<div class="mode sm" role="radiogroup" aria-label="隅の丸みの決め方">
+        <label><input type="radio" name="rmode" value="manual" ${rAuto?'':'checked'}><span>入力する</span></label>
+        <label><input type="radio" name="rmode" value="auto" ${rAuto?'checked':''}><span>自動計算（平均的な丸み）</span></label></div>`;
+      h+=rAuto?`<p class="rnote">ほかの寸法から平均的な丸みを推定して描きます。図のRには「≒」が付きます。「入力する」に切り替えると、推定値から書き換えられます。</p>`
+              :`<p class="rnote">Rゲージ等で測った半径を入力します。測れない場合は「自動計算」を選びます。</p>`;
+    }
     keys.forEach(k=>{
-      const d=DEF[k];
+      const d=DEF[k], isR=RKEYS.includes(k), dis=rAuto&&isR, ds=dis?`推定：${RAUTO_RULE[k]}`:d.ds, tag=dis?'<span class="auto-tag">自動</span>':'';
       if(asym&&SIDED.has(k)){
-        h+=`<div class="row" data-k="${k}"><span class="sym">${k}</span><span class="nm">${d.name}</span>
-          <span class="num">${inputHTML('in-'+k+'-L',r1(LR.L[k]))}</span><span class="num">${inputHTML('in-'+k+'-R',r1(LR.R[k]))}</span>
-          <span class="ds">${d.ds}</span></div>`;
+        h+=`<div class="row" data-k="${k}"><span class="sym">${k}</span><span class="nm">${d.name}${tag}</span>
+          <span class="num">${inputHTML('in-'+k+'-L',r1(LR.L[k]),dis)}</span><span class="num">${inputHTML('in-'+k+'-R',r1(LR.R[k]),dis)}</span>
+          <span class="ds">${ds}</span></div>`;
       }else{
-        h+=`<label class="row" data-k="${k}" for="in-${k}"><span class="sym">${k}</span><span class="nm">${d.name}</span>
-          <span class="num one">${inputHTML('in-'+k,S[k])}<span>mm</span></span><span class="ds">${d.ds}</span></label>`;
+        h+=`<label class="row" data-k="${k}" for="in-${k}"><span class="sym">${k}</span><span class="nm">${d.name}${tag}</span>
+          <span class="num one">${inputHTML('in-'+k,S[k],dis)}<span>mm</span></span><span class="ds">${ds}</span></label>`;
       }
     });
     h+='</fieldset>';
@@ -207,6 +223,7 @@ function renderInputs(){
     el.addEventListener('input',e=>{snap(el.id);meta[k]=e.target.value;update();});
     el.addEventListener('blur',()=>{editing=null;});});
   box.querySelectorAll('input[name=mode]').forEach(r=>r.addEventListener('change',()=>setMode(r.value)));
+  box.querySelectorAll('input[name=rmode]').forEach(r=>r.addEventListener('change',()=>setRAuto(r.value==='auto')));
   box.querySelectorAll('input[type=number]').forEach(el=>{
     const [,k,side]=el.id.split('-');
     el.addEventListener('input',()=>{const v=parseFloat(el.value); if(!isFinite(v)) return;
@@ -217,12 +234,12 @@ function renderInputs(){
 }
 // ---- 元に戻す／やり直す ----
 const undoStack=[], redoStack=[]; let editing=null;
-const state=()=>JSON.stringify({mode,S,LR,meta});
+const state=()=>JSON.stringify({mode,S,LR,meta,rAuto});
 function snap(id){ // 1つの欄を編集している間は1回だけ記録
   if(id && editing===id) return;
   editing=id||null; undoStack.push(state()); if(undoStack.length>200) undoStack.shift(); redoStack.length=0; histBtns();
 }
-function restore(js){const v=JSON.parse(js); mode=v.mode; S=v.S; LR=v.LR; meta=v.meta; active=null; editing=null; renderInputs(); update(); histBtns();}
+function restore(js){const v=JSON.parse(js); mode=v.mode; S=v.S; LR=v.LR; meta=v.meta; rAuto=!!v.rAuto; active=null; editing=null; renderInputs(); update(); histBtns();}
 function undo(){ if(!undoStack.length) return say('これ以上戻せません'); redoStack.push(state()); restore(undoStack.pop()); say('元に戻しました'); }
 function redo(){ if(!redoStack.length) return say('やり直す操作がありません'); undoStack.push(state()); restore(redoStack.pop()); say('やり直しました'); }
 function histBtns(){const u=document.getElementById('undo'),r=document.getElementById('redo'); if(u){u.disabled=!undoStack.length; r.disabled=!redoStack.length;}}
@@ -233,6 +250,17 @@ document.addEventListener('keydown',e=>{
   else if(k==='y'||(k==='z'&&e.shiftKey)){e.preventDefault(); redo();}
 },true);
 
+function setRAuto(on){
+  if(on===rAuto) return;
+  snap(null);
+  if(!on){ // 手入力に戻すときは、いま図に使っている推定値を入れておく
+    const G=geom();
+    if(mode==='sym') RKEYS.forEach(k=>S[k]=G.L[k]);
+    else RKEYS.forEach(k=>{LR.L[k]=G.L[k]; LR.R[k]=G.R[k];});
+  }
+  rAuto=on; active=null; renderInputs(); update();
+  say(on?'隅の丸み（R）を自動計算にしました':'隅の丸み（R）を手入力にしました（推定値を入れてあります）');
+}
 function setMode(m){
   if(m===mode) return;
   snap(null);
@@ -276,8 +304,9 @@ function roundedPath(V){ // 画面座標（y下向き）・時計回り
 }
 
 function geom(){
-  if(mode==='sym'){const b=symToSide();return{A:S.A,t:S.t,L:b,R:{...b}};}
-  return{A:S.A,t:S.t,L:LR.L,R:LR.R};
+  const G=mode==='sym'?(()=>{const b=symToSide();return{A:S.A,t:S.t,L:b,R:{...b}};})():{A:S.A,t:S.t,L:{...LR.L},R:{...LR.R}};
+  if(rAuto){ G.L={...G.L,...autoR(G.L,G.t)}; G.R={...G.R,...autoR(G.R,G.t)}; }
+  return G;
 }
 function validate(G){
   const w=[], asym=mode==='asym';
@@ -393,7 +422,8 @@ function build(G,o){
       if(k==='R4'){dir=nrm([0.08*side,-1]); d=11; hd=side;}
       else dir=inf.convex?nrm(sub(inf.mid,inf.ctr)):nrm(sub(inf.ctr,inf.mid));
       const e=add(inf.mid,mul(dir,d)), e2=[e[0]+hd*4,e[1]];
-      const tl=o.labels==='value'?'R'+fv(v):o.labels==='sym'?symTxt(k,asym?sd:null):`${symTxt(k,asym?sd:null)} R${fv(v)}`;
+      const rv=(o.rAuto?'≒R':'R')+fv(v);
+      const tl=o.labels==='value'?rv:o.labels==='sym'?symTxt(k,asym?sd:null):`${symTxt(k,asym?sd:null)} ${rv}`;
       out+=gOpen(key(k,asym?sd:null))+ln(inf.mid[0],inf.mid[1],e[0],e[1])+ln(e[0],e[1],e2[0],e2[1])
         +txt(e2[0]+hd*0.8,e2[1]+TS*0.35,tl,hd>0?'start':'end')+'</g>';
     });
@@ -411,7 +441,7 @@ function build(G,o){
     r+=txt(vx-1,cy+TS*0.35,'0','end')+txt(vx-1,cy-bar*s+TS*0.35,unit(bar),'end');
     out+=`<g class="sbar">${r}</g>`;
   }
-  const cap=[meta.name,`S=1/${sc}`,meta.note].filter(Boolean).join('　');
+  const cap=[meta.name,`S=1/${sc}`,meta.note,(o.rAuto&&showDim)?'隅のRは推定値':''].filter(Boolean).join('　');
   out+=txt(W/2,H-2.5,esc(cap));
   return {svg:out+'</svg>',W,H};
 }
@@ -419,12 +449,16 @@ function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','
 
 function opts(exp,lbl){return{s:parseFloat(document.getElementById('scale').value),labels:lbl||document.getElementById('labels').value,
   sb:document.getElementById('sb').value,sbl:document.getElementById('sbl').value,
-  cl:document.getElementById('cl').value==='1',active:exp?null:active,exp,asym:mode==='asym'}}
+  cl:document.getElementById('cl').value==='1',active:exp?null:active,exp,asym:mode==='asym',rAuto}}
 
 function update(){
   const ak=active?active.split('.'):[];
   document.querySelectorAll('.row').forEach(r=>r.classList.toggle('on',r.dataset.k===ak[0]));
   const G=geom(), w=validate(G);
+  if(rAuto) RKEYS.forEach(k=>{
+    if(mode==='sym'){const el=document.getElementById('in-'+k); if(el&&isFinite(G.L[k])) el.value=G.L[k];}
+    else ['L','R'].forEach(sd=>{const el=document.getElementById(`in-${k}-${sd}`); if(el&&isFinite(G[sd][k])) el.value=G[sd][k];});
+  });
   document.getElementById('warn').innerHTML=w.length?`<div class="warn"><ul>${w.map(x=>`<li>${x}</li>`).join('')}</ul></div>`:'';
   if(!w.length) document.getElementById('sheet').innerHTML=build(G,opts(false)).svg;
   const deg=(r,x)=>(Math.atan2(r,x)*180/Math.PI).toFixed(1)+'°';
@@ -446,7 +480,7 @@ function update(){
      <tr><th>あご部下面の勾配</th><td>${dl.jaw}</td><td>${dr.jaw}</td></tr>
      <tr><th>底部上面の勾配</th><td>${dl.ft}</td><td>${dr.ft}</td></tr></table>`;
   }
-  try{localStorage.setItem('railSec',JSON.stringify({mode,S,L:LR.L,R:LR.R,meta}))}catch(e){}
+  try{localStorage.setItem('railSec',JSON.stringify({mode,S,L:LR.L,R:LR.R,meta,rAuto}))}catch(e){}
 }
 
 const st=document.getElementById('status');
@@ -460,11 +494,11 @@ function exportSvg(lbl){return '<?xml version="1.0" encoding="UTF-8"?>\n'+build(
 const bad=()=>validate(geom()).length>0;
 document.getElementById('copy').onclick=()=>{if(bad()) return say('入力値を修正してください');copyText(exportSvg(),'SVGコードをコピーしました');};
 document.getElementById('copyjson').onclick=()=>{
-  let body;
+  let body; const G=geom(), nm=k=>DEF[k].name+(rAuto&&RKEYS.includes(k)?'（推定）':'');
   if(mode==='sym'){
-    body='記号\t部位\t計測値(mm)\n'+LAYOUT.sym.flatMap(([,ks])=>ks).map(k=>`${k}\t${DEF[k].name}\t${S[k]}`).join('\n');
+    body='記号\t部位\t計測値(mm)\n'+LAYOUT.sym.flatMap(([,ks])=>ks).map(k=>`${k}\t${nm(k)}\t${RKEYS.includes(k)?G.L[k]:S[k]}`).join('\n');
   }else{
-    body='記号\t部位\t左(mm)\t右(mm)\n'+LAYOUT.asym.flatMap(([,ks])=>ks).map(k=>SIDED.has(k)?`${k}\t${DEF[k].name}\t${LR.L[k]}\t${LR.R[k]}`:`${k}\t${DEF[k].name}\t${S[k]}\t${S[k]}`).join('\n');
+    body='記号\t部位\t左(mm)\t右(mm)\n'+LAYOUT.asym.flatMap(([,ks])=>ks).map(k=>SIDED.has(k)?`${k}\t${nm(k)}\t${G.L[k]}\t${G.R[k]}`:`${k}\t${nm(k)}\t${S[k]}\t${S[k]}`).join('\n');
   }
   copyText((meta.name?meta.name+'\n':'')+body,'計測値を表形式でコピーしました（Excelに貼り付け可）');};
 function saveSvg(withDim){
